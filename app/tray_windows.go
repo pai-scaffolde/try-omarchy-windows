@@ -369,7 +369,7 @@ func runTray(cfg trayLaunchConfig, ready chan<- uintptr, done chan<- struct{}) {
 		case trayCommandDiagnose:
 			launchControl("-diagnostics", &diagnosticsOpen)
 		case trayCommandReclaim:
-			if msgBox(uiText("tray.reclaim.confirm"), mbYesNo|mbIconQuestion|mbDefbutton2) == idYes {
+			if msgBox(uiText("tray.reclaim.confirm_free_space"), mbYesNo|mbIconQuestion|mbDefbutton2) == idYes {
 				if err := requestReclaimError(); err != nil {
 					infoBox(err.Error())
 				} else {

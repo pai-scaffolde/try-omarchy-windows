@@ -189,7 +189,6 @@
   "tray.menu.shutdown": "Omarchy 종료...",
   "tray.error.open_window": "Try Omarchy에서 이 창을 열 수 없습니다.\n\n{error}",
   "tray.error.open_share": "Windows에서 공유 폴더를 열 수 없습니다.\n\n{error}",
-  "tray.reclaim.confirm": "Omarchy에서 삭제한 파일의 공간을 Windows에 돌려줄까요?\n\nOmarchy는 한 번에 최대 8 GiB의 여유 공간을 준비합니다. 준비하는 동안 4 GiB를 남겨 두고 Windows 디스크 공간을 잠시 사용합니다. Windows의 디스크 파일은 다음에 Omarchy를 종료할 때 줄어듭니다.",
   "tray.reclaim.started": "여유 공간을 준비하고 있습니다. Omarchy를 계속 실행해 두세요. 종료해도 되는 시점은 트레이의 공간 회수 상태에서 확인하세요.",
   "tray.reclaim.not_ready": "Omarchy가 아직 준비되지 않았습니다.",
   "tray.shutdown.starting": "Omarchy가 아직 시작 중입니다. 창이 열린 뒤에 종료할 수 있습니다.",

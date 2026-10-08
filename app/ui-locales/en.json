@@ -191,7 +191,7 @@
   "tray.menu.shutdown": "Shut down Omarchy...",
   "tray.error.open_window": "Try Omarchy could not open this window.\n\n{error}",
   "tray.error.open_share": "Windows could not open the shared folder.\n\n{error}",
-  "tray.reclaim.confirm": "Give deleted Omarchy files' space back to Windows?\n\nOmarchy will prepare its free space in one pass when Windows has room for it, or up to 8 GiB per pass otherwise. This can temporarily use Windows disk space while keeping a 4 GiB reserve. The disk file on Windows shrinks the next time Omarchy shuts down.",
+  "tray.reclaim.confirm_free_space": "Give deleted Omarchy files' space back to Windows?\n\nOmarchy will prepare its free space in one pass when Windows has room for it, or up to 8 GiB per pass otherwise. This can temporarily use Windows disk space while keeping a 4 GiB reserve. The disk file on Windows shrinks the next time Omarchy shuts down.",
   "tray.reclaim.started": "Preparing free space. Keep Omarchy running. Choose Reclaim status from the tray to check when it is ready to shut down.",
   "tray.reclaim.not_ready": "Omarchy is not ready yet.",
   "tray.shutdown.starting": "Omarchy is still starting. You can shut it down once its window opens.",

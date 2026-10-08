@@ -189,7 +189,6 @@
   "tray.menu.shutdown": "关闭 Omarchy...",
   "tray.error.open_window": "Try Omarchy 无法打开该窗口。\n\n{error}",
   "tray.error.open_share": "Windows 无法打开共享文件夹。\n\n{error}",
-  "tray.reclaim.confirm": "把 Omarchy 里已删除文件占的空间还给 Windows 吗？\n\n每次最多整理出 8 GiB 空闲空间。过程中会临时占用 Windows 磁盘空间，并保留 4 GiB 余量。下次关闭 Omarchy 时，Windows 上的磁盘文件会变小。",
   "tray.reclaim.started": "正在准备空闲空间，请保持 Omarchy 运行。可从托盘的“回收状态”查看何时可以关机。",
   "tray.reclaim.not_ready": "Omarchy 尚未就绪。",
   "tray.shutdown.starting": "Omarchy 正在启动，窗口打开后即可关机。",
