@@ -931,6 +931,7 @@ func main() {
 	os.Setenv("SDL_GRAB_KEYBOARD", "0")
 
 	reclaimDir.Store(&cfg.dir)
+	reclaimDisk.Store(&cfg.disk)
 	reclaimSupported.Store(cfg.diskFormat == "raw")
 	go runGuestAgent(cfg.dir)
 	go watchKeyboardPreferences(cfg.dir)
@@ -1726,6 +1727,9 @@ func runGuestAgent(dir string) {
 // lifecycle port.
 // reclaimDir is the data directory whose Windows drive bounds a reclaim pass.
 var reclaimDir atomic.Pointer[string]
+
+// reclaimDisk is the raw disk whose holes are all a reclaim pass can grow.
+var reclaimDisk atomic.Pointer[string]
 var reclaimSupported atomic.Bool
 
 func requestReclaimError() error {
@@ -1733,15 +1737,20 @@ func requestReclaimError() error {
 		return errors.New(uiText("reclaim.error.unsupported"))
 	}
 	dir := reclaimDir.Load()
+	disk := reclaimDisk.Load()
 	a := theAgent.Load()
-	if dir == nil || a == nil {
+	if dir == nil || disk == nil || a == nil {
 		return errors.New(uiText("reclaim.error.not_ready"))
 	}
 	free, err := diskFreeBytes(*dir)
 	if err != nil {
 		return uiError(uiTextWith("reclaim.error.free_space", map[string]string{"error": err.Error()}), err)
 	}
-	budget := reclaimBudgetMiB(free)
+	size, holes := diskHoleBytes(*disk)
+	budget := reclaimBudgetMiB(free, size, holes)
+	if holes <= size {
+		logf("reclaim: %s free on Windows, %s of the disk not yet allocated", formatGiB(free), formatGiB(holes))
+	}
 	if budget == 0 {
 		return errors.New(uiText("reclaim.error.low_space"))
 	}

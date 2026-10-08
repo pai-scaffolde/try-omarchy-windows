@@ -80,3 +80,20 @@ func compactDisk(path string, report func(done, total int64)) (int64, error) {
 	}
 	return punchZeroBlocks(f, info.Size(), func(offset, length int64) error { return punchHole(f, offset, length) }, report)
 }
+
+// diskHoleBytes reports the size of disk and how much of it is not yet
+// allocated on Windows. If the allocation is unknown, every byte counts as a
+// hole, which keeps the budget to what the Windows drive can spare.
+func diskHoleBytes(disk string) (size, holes int64) {
+	info, err := os.Stat(disk)
+	if err != nil {
+		logf("reclaim: could not read the disk size: %v", err)
+		return 0, 1<<63 - 1
+	}
+	allocated, err := platformAllocatedFileBytes(disk)
+	if err != nil {
+		logf("reclaim: could not read the disk's allocated size: %v", err)
+		allocated = 0
+	}
+	return info.Size(), max(info.Size()-allocated, 0)
+}

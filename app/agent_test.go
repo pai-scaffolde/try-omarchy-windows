@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -271,10 +273,36 @@ func TestApprovedAppRequestIsBoundedAndKeepsAgentConnected(t *testing.T) {
 }
 
 func TestReclaimBudgetFollowsHostFreeSpace(t *testing.T) {
-	for free, want := range map[int64]int64{2 << 30: 0, 4300 << 20: 0, 6 << 30: 2048, 40 << 30: 8192} {
-		if got := reclaimBudgetMiB(free); got != want {
-			t.Errorf("free %d: budget %d, want %d", free, got, want)
+	const disk = 500 << 30
+	for _, c := range []struct{ free, holes, want int64 }{
+		{2 << 30, disk, 0},
+		{4300 << 20, disk, 0},
+		{6 << 30, disk, 2048},
+		{40 << 30, disk, 8192},
+		// A long-used disk is almost all allocated: zeroing it costs Windows
+		// nothing, so one pass covers all free space.
+		{40 << 30, 10 << 30, 500 << 10},
+		{14 << 30, 10 << 30, 500 << 10},
+		// Holes that would not fit keep the capped pass.
+		{14 << 30, 11 << 30, 8192},
+		{2 << 30, 0, 0},
+	} {
+		if got := reclaimBudgetMiB(c.free, disk, c.holes); got != c.want {
+			t.Errorf("free %d, holes %d: budget %d, want %d", c.free, c.holes, got, c.want)
 		}
+	}
+}
+
+func TestDiskHoleBytesCountsUnallocatedSpace(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "disk.raw")
+	if err := os.WriteFile(path, make([]byte, 1<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if size, holes := diskHoleBytes(path); size != 1<<20 || holes < 0 || holes > size {
+		t.Fatalf("size %d, holes %d", size, holes)
+	}
+	if size, holes := diskHoleBytes(filepath.Join(t.TempDir(), "missing")); size != 0 || reclaimBudgetMiB(40<<30, size, holes) != reclaimPassCapMiB {
+		t.Fatalf("missing disk: size %d, holes %d", size, holes)
 	}
 }
 

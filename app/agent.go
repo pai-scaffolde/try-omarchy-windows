@@ -288,24 +288,29 @@ func (a *guestAgent) run(l net.Listener, resumed <-chan struct{}) {
 }
 
 // Zero-filling free blocks that were never written grows disk.raw on the
-// Windows drive until the compaction after shutdown. The request therefore
-// carries a budget: what the Windows drive can spare beyond a reserve, capped
-// so one pass stays a few minutes long. A later pass reclaims more.
+// Windows drive until the compaction after shutdown. Blocks the guest wrote
+// before are already allocated on Windows, so zeroing them costs nothing; only
+// the holes in disk.raw can grow it. When every hole fits in what the Windows
+// drive can spare beyond a reserve, one pass zeroes all free space. Otherwise
+// the request carries a budget: that spare space, capped so one pass stays a
+// few minutes long. A later pass reclaims more.
 const (
 	reclaimHostReserveMiB = 4096
 	reclaimPassCapMiB     = 8192
 	reclaimMinimumMiB     = 256
+	// The guest agent accepts a budget of at most seven digits.
+	reclaimMaximumMiB = 9999999
 )
 
-func reclaimBudgetMiB(hostFreeBytes int64) int64 {
+func reclaimBudgetMiB(hostFreeBytes, diskSizeBytes, diskHoleBytes int64) int64 {
 	budget := hostFreeBytes/(1<<20) - reclaimHostReserveMiB
-	if budget > reclaimPassCapMiB {
-		budget = reclaimPassCapMiB
-	}
 	if budget < reclaimMinimumMiB {
 		return 0
 	}
-	return budget
+	if diskHoleBytes <= budget<<20 {
+		return min(max(diskSizeBytes>>20, reclaimMinimumMiB), reclaimMaximumMiB)
+	}
+	return min(budget, reclaimPassCapMiB)
 }
 
 // requestZeroFill asks the guest to zero up to budgetMiB of its free space.
@@ -313,7 +318,7 @@ func reclaimBudgetMiB(hostFreeBytes int64) int64 {
 func (a *guestAgent) requestZeroFill(budgetMiB int64) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.conn == nil || a.zeroFillPending || a.zeroFilled || budgetMiB < reclaimMinimumMiB || budgetMiB > reclaimPassCapMiB {
+	if a.conn == nil || a.zeroFillPending || a.zeroFilled || budgetMiB < reclaimMinimumMiB || budgetMiB > reclaimMaximumMiB {
 		return false
 	}
 	a.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))

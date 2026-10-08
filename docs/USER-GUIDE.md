@@ -194,9 +194,11 @@ the Windows drive. Keep important files backed up outside the guest.
 
 Deleting files inside Omarchy does not shrink the disk file by itself. While
 Omarchy is running, `TryOmarchy.exe -reclaim` asks it to write zeros over its
-free space, up to what the Windows drive can spare beyond a 4 GiB reserve and
-at most 8 GiB per pass, and the disk file shrinks the next time Omarchy shuts
-down. Run it again for another pass if a lot was deleted. The tray includes Reclaim disk space and Reclaim status.
+free space, and the disk file shrinks the next time Omarchy shuts down. Zeros
+written where Omarchy has stored data before cost Windows nothing, so a disk
+file whose unallocated part fits in what the Windows drive can spare beyond a
+4 GiB reserve is reclaimed in one pass. Otherwise a pass zeroes up to that
+spare space, at most 8 GiB; run it again for another pass if a lot was deleted. The tray includes Reclaim disk space and Reclaim status.
 
 This preference is saved separately in `storage.json` so older launchers can
 still read their settings after rollback. An explicit `-disk-size` applies only

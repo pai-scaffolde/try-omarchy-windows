@@ -6,6 +6,8 @@
 - Update downloads give slow Windows name resolution more time.
 - Install the current launcher's system update from browser-downloaded release
   files using the tray menu, then choose Restart to update.
+- Reclaim disk space frees all of a long-used disk's deleted space in one pass
+  instead of 8 GiB at a time, when the Windows drive has room.
 
 ## v0.11.0 - 2026-10-09
 
