@@ -12,6 +12,8 @@
 - The previous run's serial and QEMU error logs are kept in
   `vm\previous-logs` before each start, so an unexpected stop can still be
   diagnosed after Omarchy starts again.
+- Omarchy's network keeps working when many connections are open. Before,
+  replies stopped arriving once more than 64 were open until Omarchy restarted.
 - System updates keep trying while Omarchy is running when the connection fails.
 - Update downloads give slow Windows name resolution more time.
 - Install the current launcher's system update from browser-downloaded release
