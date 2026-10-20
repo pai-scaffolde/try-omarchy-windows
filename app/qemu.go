@@ -32,10 +32,11 @@ func qemuStartupFailureTail(vmDir string) string {
 }
 
 // buildQemuArgs selects the native runtime devices and private controls.
-// Rendering follows scripts/launch-omarchy.ps1: GPU mode is WINQ-EMU's stack (patched WHPX survives -cpu host;
-// virtio-vga-gl IS the VGA device, so no -vga none), CPU mode is stock QEMU
-// with the fastest flags upstream WHPX survives (any XSAVE/AVX feature panics
-// the guest kernel) and the mandatory -vga none for virtio-gpu-pci.
+// Rendering follows scripts/launch-omarchy.ps1: GPU mode is WINQ-EMU's stack
+// (virtio-vga-gl IS the VGA device, so no -vga none), CPU mode adds the
+// mandatory -vga none for virtio-gpu-pci. The CPU model follows the runtime:
+// WINQ-EMU's patched WHPX survives -cpu host, while stock QEMU gets the fastest
+// flags upstream WHPX survives (any XSAVE/AVX feature panics the guest kernel).
 func buildQemuArgs(cfg *config, cmdline string) []string {
 	vm := cfg.vmDir
 	args := []string{}
@@ -51,12 +52,16 @@ func buildQemuArgs(cfg *config, cmdline string) []string {
 		smp = fmt.Sprint(minimumAutoGuestCPUs)
 	}
 	machine := "q35,accel=whpx"
+	cpu := "qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+aes"
+	if cfg.patchedWHPX {
+		cpu = "host"
+	}
 	if cfg.irqchipOff {
 		machine += ",kernel-irqchip=off"
 	}
 	if cfg.useGpu {
 		args = append(args,
-			"-machine", machine, "-cpu", "host", "-smp", smp, "-m", mem,
+			"-machine", machine, "-cpu", cpu, "-smp", smp, "-m", mem,
 			"-device", displayDevice(cfg, hostmem),
 			// The guest cursor is visible in the QEMU profile. Forcing SDL's host
 			// cursor as well produces two pointers that separate during motion.
@@ -69,7 +74,7 @@ func buildQemuArgs(cfg *config, cmdline string) []string {
 		)
 	} else {
 		args = append(args,
-			"-machine", machine, "-cpu", "qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+aes",
+			"-machine", machine, "-cpu", cpu,
 			"-smp", smp, "-m", mem,
 			"-vga", "none", "-device", displayDevice(cfg, hostmem),
 			"-display", sdlDisplay(false, cfg.hostCursor),

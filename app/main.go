@@ -77,8 +77,11 @@ type config struct {
 	cpus         int
 	hostTotalMiB int
 	// Rendering decision inputs, see render_probe.go.
-	renderMode     string
-	runtimeID      string
+	renderMode string
+	runtimeID  string
+	// patchedWHPX is set when QEMU is the WINQ-EMU runtime, whose WHPX
+	// virtualizes XSAVE state, so -cpu host boots in either render mode.
+	patchedWHPX    bool
 	displayDriver  string
 	temporaryCPU   bool
 	recoveryChoice *gpuRecoveryDecision
@@ -811,6 +814,7 @@ func main() {
 	if gpuRoot != "" {
 		cfg.qemu = filepath.Join(gpuRoot, "bin", qemuExe)
 		cfg.supportsSharing = true
+		cfg.patchedWHPX = true
 		cfg.runtimeID = runtimeIdentity(gpuRoot)
 		cfg.displayDriver = displayDriverIdentity()
 		probe, err := loadRenderProbe(cfg.dir)

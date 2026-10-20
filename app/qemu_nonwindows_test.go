@@ -56,6 +56,7 @@ type config struct {
 	// Rendering decision inputs, see render_probe.go.
 	renderMode     string
 	runtimeID      string
+	patchedWHPX    bool
 	displayDriver  string
 	temporaryCPU   bool
 	recoveryChoice *gpuRecoveryDecision
@@ -231,6 +232,23 @@ func TestBuildQemuArgsKeepsKernelIrqchipUnlessRefused(t *testing.T) {
 		args = strings.Join(buildQemuArgs(cfg, "root=/dev/vda"), " ")
 		if !strings.Contains(args, "-machine q35,accel=whpx,kernel-irqchip=off -cpu") {
 			t.Fatalf("gpu=%v: kernel-irqchip=off missing: %s", gpu, args)
+		}
+	}
+}
+
+func TestBuildQemuArgsCPUModelFollowsTheRuntime(t *testing.T) {
+	for _, tc := range []struct {
+		gpu, patched bool
+		want         string
+	}{
+		{true, true, "-cpu host "},
+		{false, true, "-cpu host "},
+		{false, false, "-cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+aes "},
+	} {
+		cfg := &config{vmDir: "/vm", guestDir: "/guest", disk: "/vm/disk.raw",
+			diskFormat: "raw", memMiB: 4096, audio: "none", useGpu: tc.gpu, patchedWHPX: tc.patched}
+		if args := strings.Join(buildQemuArgs(cfg, "root=/dev/vda"), " "); !strings.Contains(args, tc.want) {
+			t.Fatalf("gpu=%v patched=%v: want %q in %s", tc.gpu, tc.patched, tc.want, args)
 		}
 	}
 }
