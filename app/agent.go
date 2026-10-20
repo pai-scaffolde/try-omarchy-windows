@@ -41,7 +41,11 @@ type guestAgent struct {
 	lastAppLaunch time.Time
 	// zeroFilled is set when the guest reports that it zero-filled its free
 	// space, so the launcher compacts disk.raw after the guest powers off.
+	// filledConn is the agent connection that reported it: a guest reboot
+	// keeps the launcher (and the pending compaction) but reconnects the
+	// agent, and the rebooted guest may be asked again.
 	zeroFilled      bool
+	filledConn      net.Conn
 	zeroFillPending bool
 	zeroFillStatus  string
 }
@@ -190,6 +194,7 @@ func (a *guestAgent) read(c net.Conn, r *bufio.Reader) {
 			a.mu.Lock()
 			if a.conn == c && a.zeroFillPending {
 				a.zeroFilled = true
+				a.filledConn = c
 				a.zeroFillPending = false
 				a.zeroFillStatus = uiText("reclaim.status.finished")
 			}
@@ -318,7 +323,7 @@ func reclaimBudgetMiB(hostFreeBytes, diskSizeBytes, diskHoleBytes int64) int64 {
 func (a *guestAgent) requestZeroFill(budgetMiB int64) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.conn == nil || a.zeroFillPending || a.zeroFilled || budgetMiB < reclaimMinimumMiB || budgetMiB > reclaimMaximumMiB {
+	if a.conn == nil || a.zeroFillPending || (a.zeroFilled && a.filledConn == a.conn) || budgetMiB < reclaimMinimumMiB || budgetMiB > reclaimMaximumMiB {
 		return false
 	}
 	a.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))

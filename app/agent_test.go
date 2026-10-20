@@ -155,6 +155,29 @@ func TestGuestAgentZeroFillRoundTrip(t *testing.T) {
 	if !strings.Contains(a.reclaimStatus(), "Shut down") {
 		t.Fatal(a.reclaimStatus())
 	}
+
+	// A guest reboot reconnects the agent without a shutdown, so the
+	// launcher has not compacted yet. The rebooted guest can be asked again.
+	c.Close()
+	c2, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	c2.Write([]byte("hello 2\n"))
+	r2 := bufio.NewReader(c2)
+	c2.SetReadDeadline(time.Now().Add(2 * time.Second))
+	r2.ReadString('\n') // time on connect
+	deadline = time.Now().Add(2 * time.Second)
+	for !a.requestZeroFill(1024) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if line, err := r2.ReadString('\n'); err != nil || line != "zero-fill 1024\n" {
+		t.Fatalf("rebooted guest got %q, %v", line, err)
+	}
+	if !a.compactPending() {
+		t.Fatal("earlier zero-fill no longer compacts at shutdown")
+	}
 }
 
 func TestGuestSettingsRequestKeepsAgentConnected(t *testing.T) {
