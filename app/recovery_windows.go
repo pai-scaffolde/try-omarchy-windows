@@ -133,6 +133,9 @@ func confirmResetBackup(dir string) (bool, error) {
 }
 
 func resetFromSettings(dir string) error {
+	if _, format := selectDisk(filepath.Join(dir, "vm"), false); format == "qcow2" {
+		return standardQCOW2Unsupported("Reset")
+	}
 	if !completeInstallExists(dir, "disk.raw") {
 		return uiError(uiText("error.reset.no_install"), nil)
 	}

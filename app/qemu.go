@@ -89,7 +89,7 @@ func buildQemuArgs(cfg *config, cmdline string) []string {
 		render = "cpu"
 	}
 	args = append(args,
-		"-drive", "file="+qemuOptionValue(cfg.disk)+",format="+cfg.diskFormat+",if=virtio",
+		"-drive", driveArg(cfg),
 		"-kernel", filepath.Join(cfg.guestDir, "vmlinuz-linux"),
 		"-initrd", filepath.Join(cfg.guestDir, "initramfs-linux.img"),
 		"-append", cmdline+" tryomarchy.render="+render,
@@ -218,6 +218,40 @@ func sdlDisplay(gpu, hostCursor bool) string {
 	return "sdl,gl=" + gl + ",show-cursor=" + cursor + ",window-close=off"
 }
 
+// selectDisk picks the disk a launch boots. Portable installations use their
+// QCOW2 overlay. A standard installation boots vm\disk.qcow2 when one exists and
+// vm\disk.raw otherwise. QEMU's Windows file backend cannot pass a guest's
+// discards to NTFS, so a raw disk only grows; the qcow2 driver frees discarded
+// clusters itself and reuses them, so a converted disk stays near the guest's
+// live data without the powered-off reclaim pass.
+func selectDisk(vmDir string, portable bool) (path, format string) {
+	qcow2 := filepath.Join(vmDir, "disk.qcow2")
+	if portable {
+		return qcow2, "qcow2"
+	}
+	if _, err := os.Lstat(qcow2); err == nil {
+		return qcow2, "qcow2"
+	}
+	return filepath.Join(vmDir, "disk.raw"), "raw"
+}
+
+// driveArg passes guest discards (fstrim) and zero writes through to the qcow2
+// driver, which is what lets it reuse the freed space.
+func driveArg(cfg *config) string {
+	arg := "file=" + qemuOptionValue(cfg.disk) + ",format=" + cfg.diskFormat + ",if=virtio"
+	if cfg.diskFormat == "qcow2" {
+		arg += ",discard=unmap,detect-zeroes=unmap"
+	}
+	return arg
+}
+
+// standardQCOW2Unsupported is the answer from recovery actions that only know a
+// standard installation's raw disk. They refuse rather than look for a
+// disk.raw that a converted installation no longer has.
+func standardQCOW2Unsupported(action string) error {
+	return fmt.Errorf("%s does not support an installation that boots vm\\disk.qcow2 yet; nothing was changed", action)
+}
+
 // prepareDisk gives the guest its writable disk: a sparse copy of the factory
 // rootfs, extended to the spec's expanded size (the NTFS sparse-file trick from
 // jorge's fork - the file reads as 24 GiB without occupying it). The copy takes
@@ -241,6 +275,15 @@ func prepareDisk(cfg *config, expandedMiB int64) error {
 	}
 	if cfg.portable {
 		return preparePortableDisk(cfg, expandedBytes)
+	}
+	if cfg.diskFormat == "qcow2" {
+		// A QCOW2 file is far smaller than its virtual size, so the raw size
+		// check below would truncate it. Grow its virtual size instead.
+		disk, err := inspectInstallationDisk(cfg.dir)
+		if err != nil {
+			return err
+		}
+		return growPortableDisk(cfg.dir, disk, expandedBytes)
 	}
 	if info, err := os.Lstat(cfg.disk); err == nil {
 		if !info.Mode().IsRegular() {

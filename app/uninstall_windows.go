@@ -123,12 +123,14 @@ func runUninstall(dir string) error {
 	if err := validateUninstallDirectory(dir); err != nil {
 		return err
 	}
-	if disk := filepath.Join(dir, "vm", "disk.raw"); fileExists(disk) {
-		f, err := openBackupDisk(disk)
-		if err != nil {
-			return uiError(uiTextWith("error.uninstall.close_first", map[string]string{"error": err.Error()}), err)
+	for _, name := range []string{"disk.raw", "disk.qcow2"} {
+		if disk := filepath.Join(dir, "vm", name); fileExists(disk) {
+			f, err := openBackupDisk(disk)
+			if err != nil {
+				return uiError(uiTextWith("error.uninstall.close_first", map[string]string{"error": err.Error()}), err)
+			}
+			f.Close()
 		}
-		f.Close()
 	}
 	choice := msgBox(uiTextWith("uninstall.confirm_backup", map[string]string{"path": dir}), mbYesNoCancel|mbIconQuestion|mbDefbutton2)
 	if choice != idYes && choice != idNo {

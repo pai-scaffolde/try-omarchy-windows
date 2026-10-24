@@ -12,6 +12,9 @@ func resetStandardDisk(cfg *config, expandedMiB int64) (string, error) {
 	if cfg.portable {
 		return "", uiError(uiText("error.reset.standard_only"), nil)
 	}
+	if cfg.diskFormat == "qcow2" {
+		return "", standardQCOW2Unsupported("Start fresh")
+	}
 	if err := rejectPendingReset(cfg); err != nil {
 		return "", err
 	}

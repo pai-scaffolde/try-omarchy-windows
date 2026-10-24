@@ -620,6 +620,9 @@ func (s moveStore) prepare(source, destination string, report backupProgress) (*
 			return nil, uiError(uiText("error.move.pending_update"), nil)
 		}
 	}
+	if _, format := selectDisk(filepath.Join(source, "vm"), false); format == "qcow2" {
+		return nil, standardQCOW2Unsupported("Move")
+	}
 	disk, err := openBackupDisk(filepath.Join(source, "vm", "disk.raw"))
 	if err != nil {
 		return nil, uiError(uiTextWith("error.move.close_first", map[string]string{"error": err.Error()}), err)

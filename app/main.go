@@ -558,13 +558,11 @@ func main() {
 
 	cfg.guestDir = filepath.Join(cfg.dir, "guest")
 	cfg.vmDir = filepath.Join(cfg.dir, "vm")
-	cfg.diskFormat = "raw"
-	cfg.disk = filepath.Join(cfg.vmDir, "disk.raw")
-	if cfg.portable {
-		cfg.diskFormat = "qcow2"
-		cfg.disk = filepath.Join(cfg.vmDir, "disk.qcow2")
-	}
+	cfg.disk, cfg.diskFormat = selectDisk(cfg.vmDir, cfg.portable)
 	if cfg.fresh && !cfg.portable {
+		if cfg.diskFormat == "qcow2" {
+			fatal(standardQCOW2Unsupported("Start fresh").Error())
+		}
 		if _, err := os.Lstat(cfg.disk); err == nil {
 			proceed, err := confirmResetBackup(cfg.dir)
 			if err != nil || !proceed {
