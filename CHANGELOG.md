@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Omarchy refuses to start, and creates nothing, when an installation that has
+  reached the desktop before can no longer find its disk.
+- Disk requests run on their own I/O threads with one queue per vCPU, so a
+  busy guest is no longer held back by QEMU's main loop.
+- The previous run's serial and QEMU error logs are kept in
+  `vm\previous-logs` before each start, so an unexpected stop can still be
+  diagnosed after Omarchy starts again.
 - System updates keep trying while Omarchy is running when the connection fails.
 - Update downloads give slow Windows name resolution more time.
 - Install the current launcher's system update from browser-downloaded release

@@ -2,10 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -88,8 +90,8 @@ func buildQemuArgs(cfg *config, cmdline string) []string {
 	if !cfg.useGpu {
 		render = "cpu"
 	}
+	args = append(args, driveArgs(cfg)...)
 	args = append(args,
-		"-drive", driveArg(cfg),
 		"-kernel", filepath.Join(cfg.guestDir, "vmlinuz-linux"),
 		"-initrd", filepath.Join(cfg.guestDir, "initramfs-linux.img"),
 		"-append", cmdline+" tryomarchy.render="+render,
@@ -235,14 +237,115 @@ func selectDisk(vmDir string, portable bool) (path, format string) {
 	return filepath.Join(vmDir, "disk.raw"), "raw"
 }
 
-// driveArg passes guest discards (fstrim) and zero writes through to the qcow2
-// driver, which is what lets it reuse the freed space.
-func driveArg(cfg *config) string {
-	arg := "file=" + qemuOptionValue(cfg.disk) + ",format=" + cfg.diskFormat + ",if=virtio"
-	if cfg.diskFormat == "qcow2" {
-		arg += ",discard=unmap,detect-zeroes=unmap"
+// desktopReachedName records, in vm\, the disk that last reached the desktop.
+const desktopReachedName = "desktop-reached"
+
+// refuseMissingInstalledDisk stops a launch whose installation has reached the
+// desktop before but whose disk is gone, for example after a disk was moved or
+// renamed by hand. prepareDisk would otherwise create a new disk from the
+// factory image, and the window would show a fresh Omarchy in place of the
+// user's system. Start fresh still replaces a missing disk on request.
+func refuseMissingInstalledDisk(cfg *config) error {
+	if cfg.fresh {
+		return nil
 	}
-	return arg
+	if _, err := os.Lstat(filepath.Join(cfg.vmDir, desktopReachedName)); err != nil {
+		return nil
+	}
+	if _, err := os.Lstat(cfg.disk); !os.IsNotExist(err) {
+		return nil
+	}
+	return fmt.Errorf("%s is missing, but this installation has started Omarchy before. No new disk was created. Put the disk back, restore a backup, or use Start fresh", cfg.disk)
+}
+
+// diskIOThreads caps the I/O threads that serve the disk's queues. Without one,
+// every guest disk request runs on QEMU's main loop next to the display,
+// network and chardevs, and the disk stalls well below what the drive can do.
+const diskIOThreads = 4
+
+// driveArgs attaches the disk as a multi-queue virtio-blk device whose queues
+// are spread round-robin over dedicated I/O threads. Guest discards (fstrim)
+// and zero writes pass through to the qcow2 driver, which is what lets it
+// reuse the freed space.
+func driveArgs(cfg *config) []string {
+	drive := "file=" + qemuOptionValue(cfg.disk) + ",format=" + cfg.diskFormat + ",if=none,id=disk0"
+	if cfg.diskFormat == "qcow2" {
+		drive += ",discard=unmap,detect-zeroes=unmap"
+	}
+	threads := cfg.cpus
+	if threads <= 0 {
+		threads = minimumAutoGuestCPUs
+	}
+	threads = min(threads, diskIOThreads)
+	args := []string{}
+	type vqMapping struct {
+		IOThread string `json:"iothread"`
+	}
+	mapping := make([]vqMapping, 0, threads)
+	for i := range threads {
+		id := fmt.Sprintf("disk-io%d", i)
+		args = append(args, "-object", "iothread,id="+id)
+		mapping = append(mapping, vqMapping{IOThread: id})
+	}
+	device, _ := json.Marshal(struct {
+		Driver  string      `json:"driver"`
+		Drive   string      `json:"drive"`
+		Mapping []vqMapping `json:"iothread-vq-mapping"`
+	}{"virtio-blk-pci", "disk0", mapping})
+	return append(args, "-drive", drive, "-device", string(device))
+}
+
+// keepPreviousQemuLogs copies the last run's serial and QEMU error logs aside
+// before the next QEMU truncates them, so an exit that left no shutdown record
+// can still be diagnosed after the relaunch. They are copied, not moved: the
+// fallback ladder reads qemu-stderr.log after a failed attempt.
+func keepPreviousQemuLogs(vmDir string, now time.Time) error {
+	const keep = 20
+	const limit = 16 << 20
+	dir := filepath.Join(vmDir, "previous-logs")
+	stamp := now.Format("20060102-150405.000")
+	for _, name := range []string{"serial.log", "serial-gpu.log", "qemu-stderr.log"} {
+		src, err := os.Open(filepath.Join(vmDir, name))
+		if os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return err
+		}
+		info, err := src.Stat()
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			src.Close()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			src.Close()
+			return err
+		}
+		dst, err := os.Create(filepath.Join(dir, stamp+"-"+name))
+		if err == nil {
+			// The tail holds the end of the run, which is what explains an exit.
+			_, err = io.Copy(dst, io.NewSectionReader(src, max(0, info.Size()-limit), limit))
+			if closeErr := dst.Close(); err == nil {
+				err = closeErr
+			}
+		}
+		src.Close()
+		if err != nil {
+			return err
+		}
+		kept, err := filepath.Glob(filepath.Join(dir, "*-"+name))
+		if err != nil {
+			return err
+		}
+		// Names start with the copy time, so name order is age order.
+		sort.Strings(kept)
+		for _, old := range kept[:max(0, len(kept)-keep)] {
+			os.Remove(old)
+		}
+	}
+	return nil
 }
 
 // standardQCOW2Unsupported is the answer from recovery actions that only know a

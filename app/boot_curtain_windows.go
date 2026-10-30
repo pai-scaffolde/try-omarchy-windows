@@ -65,7 +65,6 @@ const (
 	rdwInvalidate       = 0x0001
 	rdwAllChildren      = 0x0080
 	rdwFrame            = 0x0400
-	desktopReachedName  = "desktop-reached"
 )
 
 // A first boot that asks for the user's own account shows Omarchy's account

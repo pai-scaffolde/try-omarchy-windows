@@ -363,7 +363,7 @@ func TestBuildQemuArgsUsesConfiguredDiskFormat(t *testing.T) {
 		audio:      "none",
 	}
 	args := strings.Join(buildQemuArgs(cfg, "root=/dev/vda"), " ")
-	if !strings.Contains(args, "file=/usb/data/vm/disk.qcow2,format=qcow2,if=virtio") {
+	if !strings.Contains(args, "file=/usb/data/vm/disk.qcow2,format=qcow2,if=none,id=disk0") {
 		t.Fatalf("configured disk format missing from QEMU args: %s", args)
 	}
 }

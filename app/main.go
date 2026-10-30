@@ -559,6 +559,9 @@ func main() {
 	cfg.guestDir = filepath.Join(cfg.dir, "guest")
 	cfg.vmDir = filepath.Join(cfg.dir, "vm")
 	cfg.disk, cfg.diskFormat = selectDisk(cfg.vmDir, cfg.portable)
+	if err := refuseMissingInstalledDisk(cfg); err != nil {
+		fatal(uiTextWith("fatal.disk", map[string]string{"error": err.Error()}))
+	}
 	if cfg.fresh && !cfg.portable {
 		if cfg.diskFormat == "qcow2" {
 			fatal(standardQCOW2Unsupported("Start fresh").Error())
@@ -1090,6 +1093,9 @@ func supervise(cfg *config, cmdline string) bool {
 		if cfg.audio == "sdl" {
 			cfg.audioRates = launchAudioSampleRates(cfg.audioDevices, audioSelection, cfg.desktop.MicrophoneDisabled)
 			logf("SDL audio sample rates: output=%d Hz input=%d Hz", cfg.audioRates.Output, cfg.audioRates.Input)
+		}
+		if err := keepPreviousQemuLogs(cfg.vmDir, time.Now()); err != nil {
+			logf("could not keep the previous QEMU logs: %v", err)
 		}
 		proc = exec.Command(cfg.qemu, buildQemuArgs(cfg, cmdline)...)
 		if !audioSelection && (cfg.audioDevices.Output != "" || (!cfg.desktop.MicrophoneDisabled && cfg.audioDevices.Input != "")) {
