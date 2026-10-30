@@ -638,7 +638,12 @@ func main() {
 		}
 	}
 	// Per-run stderr: the memory ladder sniffs this file, stale errors from a
-	// previous run must not be mistaken for this one's.
+	// previous run must not be mistaken for this one's. Keep the previous
+	// run's copy first; it is the evidence for how that run ended.
+	if err := keepPreviousQemuLogs(cfg.vmDir, time.Now()); err != nil {
+		logf("could not keep the previous QEMU logs: %v", err)
+	}
+	previousQemuLogsKept = true
 	os.Remove(filepath.Join(cfg.vmDir, "qemu-stderr.log"))
 
 	updatesEnabled := !snapshotRecovery && !cfg.desktop.AutomaticUpdatesDisabled && automaticUpdatesEnabled(cfg, *noUpdate, *release, *sumsSHA256)
@@ -1046,6 +1051,10 @@ func loadLaunchAudioPreferences(dir string) (audioPreferences, error) {
 // liveness is probed (a QEMU wedged at guest poweroff cannot deliver its
 // SHUTDOWN event), and a read stays permanently pending so a fast exit after
 // guest-reset cannot discard the event (see docs/FINDINGS.md).
+// previousQemuLogsKept is set once the launch has kept the last run's logs,
+// so the first boot does not copy them a second time.
+var previousQemuLogsKept bool
+
 func supervise(cfg *config, cmdline string) bool {
 	var proc *exec.Cmd
 	var qmp *qmpConn
@@ -1094,7 +1103,11 @@ func supervise(cfg *config, cmdline string) bool {
 			cfg.audioRates = launchAudioSampleRates(cfg.audioDevices, audioSelection, cfg.desktop.MicrophoneDisabled)
 			logf("SDL audio sample rates: output=%d Hz input=%d Hz", cfg.audioRates.Output, cfg.audioRates.Input)
 		}
-		if err := keepPreviousQemuLogs(cfg.vmDir, time.Now()); err != nil {
+		// The first QEMU of this process was covered at startup; every later
+		// one (fallback attempts, guest reboots) truncates its predecessor's logs.
+		if previousQemuLogsKept {
+			previousQemuLogsKept = false
+		} else if err := keepPreviousQemuLogs(cfg.vmDir, time.Now()); err != nil {
 			logf("could not keep the previous QEMU logs: %v", err)
 		}
 		proc = exec.Command(cfg.qemu, buildQemuArgs(cfg, cmdline)...)
