@@ -176,6 +176,7 @@ func main() {
 	uninstall := flag.Bool("uninstall", false, "remove this Try Omarchy installation: shortcuts, the Apps & features entry, and the data folder")
 	uninstallFinish := flag.Bool("uninstall-finish", false, "internal: delete the data folder after the launcher inside it exits")
 	reclaim := flag.Bool("reclaim", false, "ask the running Omarchy to zero its free space so the disk file shrinks after shutdown, then exit")
+	compactFlag := flag.Bool("compact", false, "turn the unused space in a stopped standard VM's qcow2 disk back into free space on Windows, then exit")
 	backupPath := flag.String("backup", "", "back up a stopped standard VM to a new ZIP file, then exit")
 	restorePath := flag.String("restore", "", "restore a trusted backup into a new folder selected with -dir, then exit")
 	openSettings := flag.Bool("settings", false, "open the settings window, then exit")
@@ -221,10 +222,13 @@ func main() {
 		}
 		*recoveryAction = "uninstall"
 	}
-	maintenance := *backupPath != "" || *restorePath != "" || *recoveryAction != ""
+	maintenance := *backupPath != "" || *restorePath != "" || *recoveryAction != "" || *compactFlag
 	installWalkthrough := *recoveryAction == "install-omarchy"
 	if *recoveryAction != "" && (*recoveryAction != "backup" && *recoveryAction != "restore" && *recoveryAction != "reset" && *recoveryAction != "uninstall" && *recoveryAction != "move" && *recoveryAction != "move-cleanup" && *recoveryAction != "snapshots" && *recoveryAction != "portable-create" && *recoveryAction != "install-omarchy" || *backupPath != "" || *restorePath != "") {
 		fatal(uiTextWith("fatal.cli.recovery_action", map[string]string{"actions": "backup, restore, snapshots, portable-create, reset, move, uninstall, install-omarchy"}))
+	}
+	if *compactFlag && (*backupPath != "" || *restorePath != "" || *recoveryAction != "") {
+		fatal(uiText("fatal.cli.one_action"))
 	}
 	if maintenance && (*backupPath != "" && *restorePath != "" || cfg.portable && !portableRecoveryAllowed(*recoveryAction, *backupPath, *restorePath) || cfg.fresh || *openSettings || *diagnostics || *enableWhp || *disableFastStartupFlag || *applyLauncherUpdateFlag || *applyLauncherRollbackFlag) {
 		fatal(uiText("fatal.cli.one_action"))
@@ -408,6 +412,11 @@ func main() {
 		return
 	}
 	if maintenance {
+		if *compactFlag {
+			cfg.vmDir = filepath.Join(cfg.dir, "vm")
+			cfg.disk, cfg.diskFormat = selectDisk(cfg.vmDir, cfg.portable)
+			os.Exit(runOfflineCompact(cfg))
+		}
 		var err error
 		if *backupPath != "" {
 			beginRecoveryProgress(uiText("recovery.backup.status"))
@@ -1782,8 +1791,13 @@ func requestReclaimError() error {
 }
 
 // compactAfterShutdown runs once the guest has powered off, when the disk is
-// closed, and only when the guest reported a zero-fill during this session.
+// closed. A qcow2 disk is compacted every time; a raw disk only when the guest
+// reported a zero-fill during this session.
 func compactAfterShutdown(cfg *config) {
+	if cfg.diskFormat == "qcow2" {
+		compactQcow2Logged(cfg.disk)
+		return
+	}
 	a := theAgent.Load()
 	if a == nil || !a.compactPending() || cfg.diskFormat != "raw" {
 		return
