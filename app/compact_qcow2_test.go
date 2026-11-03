@@ -85,14 +85,20 @@ func (r readerWithSize) ReadAt(p []byte, off int64) (int, error) {
 
 func TestQcow2FreeRunsRefusesImagesItCannotReadExactly(t *testing.T) {
 	cases := map[string]func([]byte){
-		"magic":         func(b []byte) { b[0] = 'X' },
-		"version 2":     func(b []byte) { binary.BigEndian.PutUint32(b[4:], 2) },
-		"cluster bits":  func(b []byte) { binary.BigEndian.PutUint32(b[20:], 20) },
-		"refcount bits": func(b []byte) { binary.BigEndian.PutUint32(b[96:], 5) },
-		"dirty":         func(b []byte) { binary.BigEndian.PutUint64(b[72:], 1) },
-		"table outside": func(b []byte) { binary.BigEndian.PutUint64(b[48:], uint64(1<<40)) },
-		"block outside": func(b []byte) { binary.BigEndian.PutUint64(b[qcow2ClusterSize:], uint64(1<<40)) },
-		"reserved bits": func(b []byte) { binary.BigEndian.PutUint64(b[qcow2ClusterSize:], uint64(2*qcow2ClusterSize+1)) },
+		"magic":                              func(b []byte) { b[0] = 'X' },
+		"version 2":                          func(b []byte) { binary.BigEndian.PutUint32(b[4:], 2) },
+		"cluster bits":                       func(b []byte) { binary.BigEndian.PutUint32(b[20:], 20) },
+		"refcount bits":                      func(b []byte) { binary.BigEndian.PutUint32(b[96:], 5) },
+		"dirty":                              func(b []byte) { binary.BigEndian.PutUint64(b[72:], 1) },
+		"table outside":                      func(b []byte) { binary.BigEndian.PutUint64(b[48:], uint64(1<<40)) },
+		"block outside":                      func(b []byte) { binary.BigEndian.PutUint64(b[qcow2ClusterSize:], uint64(1<<40)) },
+		"reserved bits":                      func(b []byte) { binary.BigEndian.PutUint64(b[qcow2ClusterSize:], uint64(2*qcow2ClusterSize+1)) },
+		"zeroed first table entry":           func(b []byte) { binary.BigEndian.PutUint64(b[qcow2ClusterSize:], 0) },
+		"refcount block marks itself unused": func(b []byte) { binary.BigEndian.PutUint16(b[2*qcow2ClusterSize+4:], 0) },
+		"L1 table marked unused": func(b []byte) {
+			binary.BigEndian.PutUint32(b[36:], 1)
+			binary.BigEndian.PutUint64(b[40:], uint64(3*qcow2ClusterSize))
+		},
 	}
 	for name, corrupt := range cases {
 		img := syntheticQcow2([]bool{false})

@@ -91,6 +91,28 @@ func qcow2FreeRuns(f io.ReaderAt, size int64) ([][2]int64, error) {
 			}
 		}
 	}
+	// Clusters the image must be using: the header, the refcount table, every
+	// refcount block and the L1 table. If any of them reads as free, the
+	// refcounts and the metadata disagree, so the image is damaged in a way
+	// the feature bits do not show. Refuse rather than punch.
+	l1Offset := int64(binary.BigEndian.Uint64(h[40:48]))
+	l1Bytes := int64(binary.BigEndian.Uint32(h[36:40])) * 8
+	inUse := [][2]int64{{0, qcow2ClusterSize}, {tableOffset, tableClusters * qcow2ClusterSize}}
+	if l1Bytes > 0 {
+		inUse = append(inUse, [2]int64{l1Offset, l1Bytes})
+	}
+	for i := 0; i+8 <= len(table); i += 8 {
+		if offset := int64(binary.BigEndian.Uint64(table[i:])); offset != 0 {
+			inUse = append(inUse, [2]int64{offset, qcow2ClusterSize})
+		}
+	}
+	for _, m := range inUse {
+		for _, r := range runs {
+			if m[0] < r[0]+r[1] && r[0] < m[0]+m[1] {
+				return nil, fmt.Errorf("qcow2 metadata at %d reads as unused; the refcounts are damaged, run qemu-img check", m[0])
+			}
+		}
+	}
 	return runs, nil
 }
 
