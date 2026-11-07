@@ -6,9 +6,6 @@
   reached the desktop before can no longer find its disk.
 - Disk requests run on their own I/O threads with one queue per vCPU, so a
   busy guest is no longer held back by QEMU's main loop.
-- The disk bypasses the Windows file cache and keeps the whole QCOW2 map in
-  memory, so a busy guest's scattered disk requests no longer queue behind
-  Windows cache writeback and repeated map reads.
 - The previous run's serial and QEMU error logs are kept in
   `vm\previous-logs` before each start, so an unexpected stop can still be
   diagnosed after Omarchy starts again.
