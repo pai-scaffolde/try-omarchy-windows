@@ -38,7 +38,7 @@ func TestStandardInstallBootsQcow2WithDiscard(t *testing.T) {
 		t.Fatalf("standard install without a QCOW2 disk: %s %s", disk, format)
 	}
 	raw := strings.Join(driveArgs(&config{disk: disk, diskFormat: format}), " ")
-	if !strings.Contains(raw, ",format=raw,if=none,id=disk0") || strings.Contains(raw, "discard") || strings.Contains(raw, "detect-zeroes") {
+	if !strings.Contains(raw, ",format=raw,if=none,id=disk0,cache.direct=on,aio=native ") || strings.Contains(raw, "discard") || strings.Contains(raw, "detect-zeroes") || strings.Contains(raw, "l2-cache-size") {
 		t.Fatalf("raw drive: %s", raw)
 	}
 
@@ -48,7 +48,7 @@ func TestStandardInstallBootsQcow2WithDiscard(t *testing.T) {
 		t.Fatalf("standard install with a QCOW2 disk: %s %s", disk, format)
 	}
 	cfg := &config{dir: dir, vmDir: vm, disk: disk, diskFormat: format}
-	if arg := strings.Join(driveArgs(cfg), " "); !strings.Contains(arg, ",format=qcow2,if=none,id=disk0,discard=unmap,detect-zeroes=unmap ") {
+	if arg := strings.Join(driveArgs(cfg), " "); !strings.Contains(arg, ",format=qcow2,if=none,id=disk0,cache.direct=on,aio=native,discard=unmap,detect-zeroes=unmap,l2-cache-size="+qcow2L2CacheSize+" ") {
 		t.Fatalf("qcow2 drive: %s", arg)
 	}
 	if _, portableFormat := selectDisk(t.TempDir(), true); portableFormat != "qcow2" {
