@@ -263,6 +263,16 @@ func refuseMissingInstalledDisk(cfg *config) error {
 // network and chardevs, and the disk stalls well below what the drive can do.
 const diskIOThreads = 4
 
+// qcow2L2CacheSize is the most L2 table cache the qcow2 driver may hold. One
+// 8-byte entry maps one 64 KiB cluster, so a disk needs 1 MiB of L2 per 8 GiB
+// and a 500 GiB disk about 62.5 MiB; QEMU caps the cache at what the image
+// needs. With QEMU's default the driver rereads L2 tables from the file on
+// scattered access. In a guest on Plex under CI-like write load, 4 KiB reads at
+// queue depth 32 ran at 7,800-9,200 IOPS with this cache against 2,800-4,600
+// without it, and p99 fell from 65-112 ms to 23-34 ms (2026-11-08). It changes
+// no flush or caching behavior, and it works with the disk I/O threads.
+const qcow2L2CacheSize = "128M"
+
 // driveArgs attaches the disk as a multi-queue virtio-blk device whose queues
 // are spread round-robin over dedicated I/O threads. Guest discards (fstrim)
 // and zero writes pass through to the qcow2 driver, which is what lets it
@@ -270,7 +280,7 @@ const diskIOThreads = 4
 func driveArgs(cfg *config) []string {
 	drive := "file=" + qemuOptionValue(cfg.disk) + ",format=" + cfg.diskFormat + ",if=none,id=disk0"
 	if cfg.diskFormat == "qcow2" {
-		drive += ",discard=unmap,detect-zeroes=unmap"
+		drive += ",discard=unmap,detect-zeroes=unmap,l2-cache-size=" + qcow2L2CacheSize
 	}
 	threads := cfg.cpus
 	if threads <= 0 {

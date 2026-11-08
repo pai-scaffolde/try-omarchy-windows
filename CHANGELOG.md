@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A QCOW2 disk keeps its whole cluster map in memory, so scattered reads no
+  longer reread it from the file. A busy guest's random reads ran about twice
+  as fast with half the tail latency.
 - Omarchy refuses to start, and creates nothing, when an installation that has
   reached the desktop before can no longer find its disk.
 - Disk requests run on their own I/O threads with one queue per vCPU, so a
