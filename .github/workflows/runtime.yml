@@ -1,6 +1,10 @@
 name: Runtime
 
 on:
+  pull_request:
+    paths:
+      - runtime-build/**
+      - .github/workflows/runtime.yml
   workflow_dispatch:
     inputs:
       renderer_only:
@@ -10,6 +14,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
