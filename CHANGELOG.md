@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Omarchy no longer stops when Windows runs short of commit while Omarchy
+  gives freed memory back. The memory is returned without giving up its commit
+  charge, so there is nothing to win back; a return that still fails is logged
+  and Omarchy keeps running.
 - A QCOW2 disk keeps its whole cluster map in memory, so scattered reads no
   longer reread it from the file. A busy guest's random reads ran about twice
   as fast with half the tail latency.

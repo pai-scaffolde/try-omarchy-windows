@@ -59,9 +59,17 @@ failures to QEMU stderr; it is off during normal use.
 See [experimental pinch behavior and acceptance limits](../docs/PINCH-ZOOM.md).
 
 The r19 recipe adds `0015-reclaim-free-guest-pages-on-whpx.patch`. It handles
-virtio balloon free-page reports on WHPX by unmapping, decommitting, committing
-and remapping private guest RAM. The recommit step guarantees zero-filled pages
-when Linux reuses them. The launcher enables free-page reporting only when the
+virtio balloon free-page reports on WHPX by discarding the physical pages of
+private guest RAM in place with `DiscardVirtualMemory`. The range stays
+committed and mapped, so a reclaim never has to win commit charge back from
+Windows and cannot fail into an unmapped guest page; a page reads its old
+contents or zeroes afterwards, which a free page allows. The device already
+skips guests that ask reported pages to keep a poison value. If a discard
+fails, QEMU logs it, leaves the pages resident and returns the report as usual.
+Earlier recipes decommitted and recommitted the range and stopped QEMU when the
+recommit lost a race for commit charge (`ERROR_COMMITMENT_LIMIT`).
+`test-free-page-reclaim.sh` runs the real function under a per-process job
+commit limit to prove it. The launcher enables free-page reporting only when the
 runtime's source provenance includes this patch, so older runtimes retain their
 previous behavior. The [September 23 physical candidate record](../docs/evidence/FEATURE-GAPS-2026-09-23.md)
 includes measured Windows memory return and reuse checks. The published

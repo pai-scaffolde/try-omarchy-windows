@@ -14,10 +14,10 @@ index 4529dc4f78..9aa0e5921d 100644
  bool whpx_allowed;
  bool whpx_irqchip_in_kernel;
 diff --git i/accel/whpx/whpx-common.c w/accel/whpx/whpx-common.c
-index 2ab6830911..129c45b254 100644
+index 2ab6830911..e3f2b9399b 100644
 --- i/accel/whpx/whpx-common.c
 +++ w/accel/whpx/whpx-common.c
-@@ -26,12 +26,14 @@
+@@ -26,12 +26,15 @@
  #include "migration/blocker.h"
  #include "host-cpu.h"
  #include "accel/accel-cpu-target.h"
@@ -29,21 +29,45 @@ index 2ab6830911..129c45b254 100644
  #include "system/whpx-common.h"
  #include "system/whpx-all.h"
 +#include "system/ramblock.h"
++#include "qemu/host-utils.h"
  
  #include <winhvplatform.h>
  #include <winhvplatformdefs.h>
-@@ -285,6 +287,71 @@ void whpx_vcpu_kick(CPUState *cpu)
+@@ -285,6 +288,86 @@ void whpx_vcpu_kick(CPUState *cpu)
   * Memory support.
   */
  
++typedef DWORD (WINAPI *WhpxDiscardVirtualMemory)(PVOID address, SIZE_T size);
++
++static WhpxDiscardVirtualMemory whpx_discard_virtual_memory(void)
++{
++    static WhpxDiscardVirtualMemory discard;
++    static bool resolved;
++
++    /* Windows 8.1 and later. The build targets an older API level, so the
++     * prototype is not declared; resolve it once at run time instead.
++     */
++    if (!resolved) {
++        HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
++
++        if (kernel32) {
++            discard = (WhpxDiscardVirtualMemory)(void (*)(void))
++                GetProcAddress(kernel32, "DiscardVirtualMemory");
++        }
++        resolved = true;
++    }
++    return discard;
++}
++
 +void whpx_report_free_pages(hwaddr gpa, void *host, size_t size)
 +{
++    static uint64_t failures;
++    WhpxDiscardVirtualMemory discard;
 +    MemoryRegionSection section;
 +    MemoryRegion *mr;
 +    RAMBlock *rb;
 +    size_t page_size = qemu_real_host_page_size();
-+    HRESULT hr;
-+    void *committed;
++    DWORD err;
 +
 +    assert(bql_locked());
 +    if (!size || !QEMU_IS_ALIGNED(gpa | (uintptr_t)host | size, page_size)) {
@@ -51,7 +75,7 @@ index 2ab6830911..129c45b254 100644
 +    }
 +
 +    /* Only QEMU-owned, private, writable anonymous RAM can be safely
-+     * decommitted. The complete GPA range must resolve to these host pages.
++     * discarded. The complete GPA range must resolve to these host pages.
 +     * Leave file-backed, external, ROM and dirty-logged memory alone.
 +     */
 +    section = memory_region_find(get_system_memory(), gpa, size);
@@ -71,32 +95,24 @@ index 2ab6830911..129c45b254 100644
 +        return;
 +    }
 +
-+    /* The guest has surrendered these free pages until the queue reply.
-+     * Unmap their GPA, decommit their private VirtualAlloc backing, then
-+     * recommit at the same VA. MEM_COMMIT guarantees zeroes on the next
-+     * access while physical pages remain unallocated until they are used.
-+     * Do not acknowledge the report if any step leaves an invalid mapping.
++    /* The guest has surrendered these free pages until the report is
++     * returned, and the caller has already ruled out a guest that asked for
++     * them to keep a poison value. Give their physical pages back to Windows
++     * in place. The range stays committed and stays mapped at its GPA, so
++     * the reclaim never needs commit charge back and cannot leave the guest
++     * with an invalid mapping. A later access sees either the old contents
++     * or zeroes, both valid for a free page.
++     *
++     * A failure here only means the pages stay resident: log it, sparingly,
++     * and let the report be returned as usual. The guest waits for every
++     * report it sends, so it must always be returned.
 +     */
-+    hr = whp_dispatch.WHvUnmapGpaRange(whpx_global.partition, gpa, size);
-+    if (FAILED(hr)) {
-+        error_report("WHPX free-page unmap failed: %08lx", hr);
-+        abort();
-+    }
-+    if (!VirtualFree(host, size, MEM_DECOMMIT)) {
-+        error_report("WHPX free-page decommit failed: %lu", GetLastError());
-+        abort();
-+    }
-+    committed = VirtualAlloc(host, size, MEM_COMMIT, PAGE_READWRITE);
-+    if (committed != host) {
-+        error_report("WHPX free-page recommit failed: %lu", GetLastError());
-+        abort();
-+    }
-+    hr = whp_dispatch.WHvMapGpaRange(whpx_global.partition, host, gpa, size,
-+            WHvMapGpaRangeFlagRead | WHvMapGpaRangeFlagWrite |
-+            WHvMapGpaRangeFlagExecute);
-+    if (FAILED(hr)) {
-+        error_report("WHPX free-page remap failed: %08lx", hr);
-+        abort();
++    discard = whpx_discard_virtual_memory();
++    err = discard ? discard(host, size) : ERROR_PROC_NOT_FOUND;
++    if (err != ERROR_SUCCESS && is_power_of_2(++failures)) {
++        warn_report("WHPX free-page discard failed: %lu "
++                    "(%" PRIu64 " failures, pages stay resident)",
++                    (unsigned long)err, failures);
 +    }
 +    memory_region_unref(mr);
 +}
