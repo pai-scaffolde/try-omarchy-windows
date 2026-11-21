@@ -59,9 +59,20 @@ failures to QEMU stderr; it is off during normal use.
 See [experimental pinch behavior and acceptance limits](../docs/PINCH-ZOOM.md).
 
 The r19 recipe adds `0015-reclaim-free-guest-pages-on-whpx.patch`. It handles
-virtio balloon free-page reports on WHPX by unmapping, decommitting, committing
-and remapping private guest RAM. The recommit step guarantees zero-filled pages
-when Linux reuses them. The launcher enables free-page reporting only when the
+virtio balloon free-page reports on WHPX by discarding the physical pages of
+private guest RAM in place with `DiscardVirtualMemory`, after unpinning the
+reported range (QEMU pins large RAM mappings with `WHvAdviseGpaRange`, and a
+pinned page cannot be given back). The range stays committed and mapped, so a reclaim never has to win commit charge back from
+Windows and cannot fail into an unmapped guest page. Windows leaves a discarded
+page's contents unspecified (tested builds return old contents or zeroes), which
+a free page allows. Unpinning is best effort; the discard runs either way. WHPX reclaims only
+for guests that did not negotiate `VIRTIO_BALLOON_F_PAGE_POISON`, so a guest
+that needs reported pages to keep their contents is never reclaimed. If a discard
+fails, QEMU logs it, leaves the pages resident and returns the report as usual.
+Earlier recipes decommitted and recommitted the range and stopped QEMU when the
+recommit lost a race for commit charge (`ERROR_COMMITMENT_LIMIT`).
+`test-free-page-reclaim.sh` runs the real function under a per-process job
+commit limit to prove it. The launcher enables free-page reporting only when the
 runtime's source provenance includes this patch, so older runtimes retain their
 previous behavior. The [September 23 physical candidate record](../docs/evidence/FEATURE-GAPS-2026-09-23.md)
 includes measured Windows memory return and reuse checks. The published
@@ -168,3 +179,30 @@ failure backoff, idle gating, route fallback and unsigned PCM ring wrap. Windows
 no-microphone menu behavior and physical hotplug remain to verify.
 An endpoint disappearing between enumeration and open can still enter SDL's
 WASAPI retry; this patch avoids the stable empty-inventory case.
+
+The r23 engineering candidate adds
+`0023-show-guest-cursors-in-sdl-windows.patch`. With an absolute pointer and
+`show-cursor=off`, SDL hides the host cursor until the guest defines a sprite.
+It then uses that sprite and hotspot as the native cursor. Guest hide requests,
+transparent definitions and creation failures keep it hidden. Each console
+retains its own pixels and visibility; window entry selects that console's
+cursor, and leaving VM windows restores the native pointer. `show-cursor=on`
+keeps the diagnostic host arrow override.
+
+Sprites up to virtio's 64x64 limit scale with the displayed guest surface:
+letterboxed surfaces use the smaller window scale, and GL scanouts use both
+stretch factors. This uses shared SDL APIs and does not touch other displays.
+The build runs `test-sdl-cursor.py` against the real cursor, grab, fullscreen,
+window-event and window-destruction functions with mocked SDL. Windows motion,
+click alignment, mixed DPI and physical multi-monitor behavior remain to verify
+with the separate guest cursor fix and a built runtime.
+
+`0024-raise-windows-fd-setsize-for-slirp.patch` builds QEMU with
+`FD_SETSIZE=4096`. The Windows main loop polls slirp's host sockets with
+`select()`, and Winsock's `fd_set` holds 64 sockets by default; `FD_SET`
+silently ignores the rest. A guest with more than 64 open flows (a browser,
+a package update, Tailscale) stops receiving replies on the extra sockets:
+UDP answers and TCP data reach QEMU's sockets on the host but never reach the
+guest, and forwarded ports stop accepting. Restarting the VM only helped until
+the socket count grew again. `select()` cost follows the number of sockets
+passed, not the declared size, so the larger limit costs nothing when idle.

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "name": "winq-emu-alpha10-source-r22",
+  "name": "winq-emu-alpha10-source-r23",
   "sourceDateEpoch": 1777269494,
   "qemu": {
     "repository": "https://github.com/cmspam/winq-emu-qemu.git",
@@ -68,7 +68,7 @@
       },
       {
         "file": "patches/qemu/0015-reclaim-free-guest-pages-on-whpx.patch",
-        "sha256": "b262c8348f25fde5cc7526276e1f59ba559df2076e413a69949506e3f0790d74"
+        "sha256": "30e6469cf7565869675cec356d1988a1c385804a18bfbb0d2e565b27f2f0bc68"
       },
       {
         "file": "patches/qemu/0016-live-sdl-audio-routes.patch",
@@ -97,6 +97,14 @@
       {
         "file": "patches/qemu/0022-keep-sdl-capture-running-without-a-microphone.patch",
         "sha256": "94835ab3e9fe7bf348401ff5d50424f8c116511ef60c138e4de7e73fb4461cec"
+      },
+      {
+        "file": "patches/qemu/0023-show-guest-cursors-in-sdl-windows.patch",
+        "sha256": "1305bb5e384cba185b4259a2935b0528404c18ee38d10e9084d25cac346e4bde"
+      },
+      {
+        "file": "patches/qemu/0024-raise-windows-fd-setsize-for-slirp.patch",
+        "sha256": "ba94ed3e314c9388aeba6e888747d92e797f1c98c9c546b4ed71a76f10163059"
       }
     ]
   },

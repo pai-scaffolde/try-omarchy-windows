@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Omarchy no longer stops when Windows runs short of commit while Omarchy
+  gives freed memory back. The memory is returned without giving up its commit
+  charge, so there is nothing to win back; a return that still fails is logged
+  and Omarchy keeps running.
 - A QCOW2 disk keeps its whole cluster map in memory, so scattered reads no
   longer reread it from the file. A busy guest's random reads ran about twice
   as fast with half the tail latency.
@@ -12,6 +16,8 @@
 - The previous run's serial and QEMU error logs are kept in
   `vm\previous-logs` before each start, so an unexpected stop can still be
   diagnosed after Omarchy starts again.
+- Omarchy's network keeps working when many connections are open. Before,
+  replies stopped arriving once more than 64 were open until Omarchy restarted.
 - System updates keep trying while Omarchy is running when the connection fails.
 - Update downloads give slow Windows name resolution more time.
 - Install the current launcher's system update from browser-downloaded release
