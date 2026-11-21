@@ -14,7 +14,7 @@ index 4529dc4f78..9aa0e5921d 100644
  bool whpx_allowed;
  bool whpx_irqchip_in_kernel;
 diff --git i/accel/whpx/whpx-common.c w/accel/whpx/whpx-common.c
-index 2ab6830911..e3f2b9399b 100644
+index 2ab6830911..d3d30d0d57 100644
 --- i/accel/whpx/whpx-common.c
 +++ w/accel/whpx/whpx-common.c
 @@ -26,12 +26,15 @@
@@ -33,7 +33,7 @@ index 2ab6830911..e3f2b9399b 100644
  
  #include <winhvplatform.h>
  #include <winhvplatformdefs.h>
-@@ -285,6 +288,86 @@ void whpx_vcpu_kick(CPUState *cpu)
+@@ -285,6 +288,106 @@ void whpx_vcpu_kick(CPUState *cpu)
   * Memory support.
   */
  
@@ -61,12 +61,13 @@ index 2ab6830911..e3f2b9399b 100644
 +
 +void whpx_report_free_pages(hwaddr gpa, void *host, size_t size)
 +{
-+    static uint64_t failures;
++    static uint64_t unpin_failures, failures;
 +    WhpxDiscardVirtualMemory discard;
 +    MemoryRegionSection section;
 +    MemoryRegion *mr;
 +    RAMBlock *rb;
 +    size_t page_size = qemu_real_host_page_size();
++    HRESULT hr;
 +    DWORD err;
 +
 +    assert(bql_locked());
@@ -96,17 +97,36 @@ index 2ab6830911..e3f2b9399b 100644
 +    }
 +
 +    /* The guest has surrendered these free pages until the report is
-+     * returned, and the caller has already ruled out a guest that asked for
-+     * them to keep a poison value. Give their physical pages back to Windows
++     * returned, and the caller reclaims only for a guest that did not
++     * negotiate PAGE_POISON, so it expects nothing of their contents. Give
++     * their physical pages back to Windows
 +     * in place. The range stays committed and stays mapped at its GPA, so
 +     * the reclaim never needs commit charge back and cannot leave the guest
 +     * with an invalid mapping. A later access sees either the old contents
 +     * or zeroes, both valid for a free page.
 +     *
++     * whpx_set_phys_mem() pins large RAM mappings, and Windows cannot give a
++     * pinned page back, so unpin the reported range first. The mapping stays
++     * valid and the range becomes ordinary pageable guest RAM. Without
++     * WHvAdviseGpaRange nothing was pinned.
++     *
 +     * A failure here only means the pages stay resident: log it, sparingly,
 +     * and let the report be returned as usual. The guest waits for every
 +     * report it sends, so it must always be returned.
 +     */
++    if (whp_dispatch.WHvAdviseGpaRange) {
++        WHV_MEMORY_RANGE_ENTRY range = { .GuestAddress = gpa,
++                                         .SizeInBytes = size };
++
++        hr = whp_dispatch.WHvAdviseGpaRange(whpx_global.partition, &range, 1,
++                                            WHvAdviseGpaRangeCodeUnpin,
++                                            NULL, 0);
++        if (FAILED(hr) && is_power_of_2(++unpin_failures)) {
++            warn_report("WHPX free-page unpin failed: %08lx "
++                        "(%" PRIu64 " failures)", (unsigned long)hr,
++                        unpin_failures);
++        }
++    }
 +    discard = whpx_discard_virtual_memory();
 +    err = discard ? discard(host, size) : ERROR_PROC_NOT_FOUND;
 +    if (err != ERROR_SUCCESS && is_power_of_2(++failures)) {
@@ -121,7 +141,7 @@ index 2ab6830911..e3f2b9399b 100644
  {
      struct whpx_state *whpx = &whpx_global;
 diff --git i/hw/virtio/virtio-balloon.c w/hw/virtio/virtio-balloon.c
-index 4c5f486ba2..9c9c976561 100644
+index 4c5f486ba2..9ea36abd0e 100644
 --- i/hw/virtio/virtio-balloon.c
 +++ w/hw/virtio/virtio-balloon.c
 @@ -23,6 +23,7 @@
@@ -132,14 +152,20 @@ index 4c5f486ba2..9c9c976561 100644
  #include "system/ramblock.h"
  #include "hw/virtio/virtio-balloon.h"
  #include "system/address-spaces.h"
-@@ -389,7 +390,14 @@ static void virtio_balloon_handle_report(VirtIODevice *vdev, VirtQueue *vq)
+@@ -389,7 +390,20 @@ static void virtio_balloon_handle_report(VirtIODevice *vdev, VirtQueue *vq)
                  continue;
              }
  
 -            ram_block_discard_range(rb, ram_offset, size);
 +            if (whpx_enabled()) {
-+                /* in_addr is a GPA only without an intervening IOMMU. */
-+                if (vdev->dma_as == &address_space_memory) {
++                /* in_addr is a GPA only without an intervening IOMMU. A
++                 * guest that negotiated PAGE_POISON relies on reported pages
++                 * keeping their contents (its poison value, or zeroes with
++                 * init_on_free), which a discard does not promise.
++                 */
++                if (vdev->dma_as == &address_space_memory &&
++                    !virtio_vdev_has_feature(vdev,
++                                             VIRTIO_BALLOON_F_PAGE_POISON)) {
 +                    whpx_report_free_pages(elem->in_addr[i], addr, size);
 +                }
 +            } else {

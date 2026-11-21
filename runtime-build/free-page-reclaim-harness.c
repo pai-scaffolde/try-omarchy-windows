@@ -6,9 +6,10 @@
  * fails with ERROR_COMMITMENT_LIMIT. The limit applies to this test process
  * only, so the host never comes under memory pressure.
  *
- * The reclaim must return, keep the range committed and mapped, release its
- * physical pages, leave each page with either its old contents or zeroes, and
- * survive a failed discard by logging it.
+ * The reclaim must return, unpin exactly the reported range before discarding
+ * it, keep the range committed and mapped, release its physical pages, leave
+ * each page with either its old contents or zeroes, and survive a failed unpin
+ * or discard by logging it.
  */
 #include <windows.h>
 #include <psapi.h>
@@ -43,12 +44,17 @@ enum {
     WHvMapGpaRangeFlagWrite = 2,
     WHvMapGpaRangeFlagExecute = 4,
 };
+typedef struct { uint64_t GuestAddress, SizeInBytes; } WHV_MEMORY_RANGE_ENTRY;
+typedef enum { WHvAdviseGpaRangeCodeUnpin = 2 } WHV_ADVISE_GPA_RANGE_CODE;
 
 static unsigned char *ram;
 static RAMBlock block = { .fd = -1 };
 static MemoryRegion region = { .ram_block = &block };
 static int unmapped, mapped, refs;
-static bool fail_discard;
+static bool fail_discard, fail_unpin;
+static int discards, unpins, unpinned_before_discard;
+static hwaddr unpin_gpa;
+static uint64_t unpin_size;
 static char last_message[512];
 static int messages;
 static jmp_buf aborted;
@@ -68,10 +74,27 @@ static HRESULT map_gpa(WHV_PARTITION_HANDLE p, void *host, hwaddr gpa,
     return S_OK;
 }
 
+/* Large RAM mappings are pinned; a pinned page is only released once unpinned. */
+static HRESULT advise_gpa(WHV_PARTITION_HANDLE p, const WHV_MEMORY_RANGE_ENTRY *ranges,
+                          UINT32 count, WHV_ADVISE_GPA_RANGE_CODE advice,
+                          const void *buffer, UINT32 buffer_size)
+{
+    (void)p; (void)buffer; (void)buffer_size;
+    if (count != 1 || advice != WHvAdviseGpaRangeCodeUnpin) {
+        return E_INVALIDARG;
+    }
+    unpins++;
+    unpin_gpa = ranges[0].GuestAddress;
+    unpin_size = ranges[0].SizeInBytes;
+    return fail_unpin ? E_OUTOFMEMORY : S_OK;
+}
+
 static __attribute__((unused)) struct {
     HRESULT (*WHvUnmapGpaRange)(WHV_PARTITION_HANDLE, hwaddr, uint64_t);
     HRESULT (*WHvMapGpaRange)(WHV_PARTITION_HANDLE, void *, hwaddr, uint64_t, int);
-} whp_dispatch = { unmap_gpa, map_gpa };
+    HRESULT (*WHvAdviseGpaRange)(WHV_PARTITION_HANDLE, const WHV_MEMORY_RANGE_ENTRY *,
+                                 UINT32, WHV_ADVISE_GPA_RANGE_CODE, const void *, UINT32);
+} whp_dispatch = { unmap_gpa, map_gpa, advise_gpa };
 static __attribute__((unused)) struct { WHV_PARTITION_HANDLE partition; } whpx_global;
 
 static bool bql_locked(void) { return true; }
@@ -121,6 +144,8 @@ typedef DWORD (WINAPI *DiscardFn)(PVOID, SIZE_T);
 static DiscardFn real_discard;
 static DWORD WINAPI discard_or_fail(PVOID address, SIZE_T size)
 {
+    discards++;
+    unpinned_before_discard += unpins == discards;
     return fail_discard ? ERROR_NOT_ENOUGH_MEMORY : real_discard(address, size);
 }
 static FARPROC harness_get_proc_address(HMODULE module, LPCSTR name)
@@ -224,6 +249,10 @@ int main(void)
         return 1;
     }
     CHECK(!refs, "memory region reference leaked");
+    CHECK(unpins == 1 && unpin_gpa == GPA_BASE && unpin_size == CHUNK,
+          "the reported range was not unpinned exactly (%d unpins, %llx+%llx)", unpins,
+          (unsigned long long)unpin_gpa, (unsigned long long)unpin_size);
+    CHECK(unpinned_before_discard == 1, "the range was discarded before it was unpinned");
     CHECK(unmapped == mapped, "GPA range left unmapped (%d unmaps, %d maps)",
           unmapped, mapped);
     CHECK(committed(chunk, CHUNK), "reclaimed range is no longer committed");
@@ -260,5 +289,17 @@ int main(void)
     CHECK(resident(ram + CHUNK) == CHUNK / PAGE, "failed discard lost resident pages");
     CHECK(committed(ram + CHUNK, CHUNK), "failed discard left the range uncommitted");
     printf("ok - failed discards are logged, leave pages resident, and return\n");
+
+    /* A failed unpin is logged and the reclaim still returns. */
+    fail_discard = false;
+    fail_unpin = true;
+    messages = 0;
+    if (reclaim(ram + 4 * CHUNK)) {
+        return 1;
+    }
+    CHECK(messages == 1 && strstr(last_message, "unpin failed"),
+          "a failed unpin was not logged: %s", last_message);
+    CHECK(committed(ram + 4 * CHUNK, CHUNK), "failed unpin left the range uncommitted");
+    printf("ok - a failed unpin is logged and the reclaim returns\n");
     return 0;
 }

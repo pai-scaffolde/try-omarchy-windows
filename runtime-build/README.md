@@ -60,11 +60,13 @@ See [experimental pinch behavior and acceptance limits](../docs/PINCH-ZOOM.md).
 
 The r19 recipe adds `0015-reclaim-free-guest-pages-on-whpx.patch`. It handles
 virtio balloon free-page reports on WHPX by discarding the physical pages of
-private guest RAM in place with `DiscardVirtualMemory`. The range stays
-committed and mapped, so a reclaim never has to win commit charge back from
+private guest RAM in place with `DiscardVirtualMemory`, after unpinning the
+reported range (QEMU pins large RAM mappings with `WHvAdviseGpaRange`, and a
+pinned page cannot be given back). The range stays committed and mapped, so a reclaim never has to win commit charge back from
 Windows and cannot fail into an unmapped guest page; a page reads its old
-contents or zeroes afterwards, which a free page allows. The device already
-skips guests that ask reported pages to keep a poison value. If a discard
+contents or zeroes afterwards, which a free page allows. WHPX reclaims only
+for guests that did not negotiate `VIRTIO_BALLOON_F_PAGE_POISON`, so a guest
+that needs reported pages to keep their contents is never reclaimed. If a discard
 fails, QEMU logs it, leaves the pages resident and returns the report as usual.
 Earlier recipes decommitted and recommitted the range and stopped QEMU when the
 recommit lost a race for commit charge (`ERROR_COMMITMENT_LIMIT`).
