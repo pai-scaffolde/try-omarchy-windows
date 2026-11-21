@@ -33,7 +33,7 @@ index 2ab6830911..d3d30d0d57 100644
  
  #include <winhvplatform.h>
  #include <winhvplatformdefs.h>
-@@ -285,6 +288,106 @@ void whpx_vcpu_kick(CPUState *cpu)
+@@ -285,6 +288,105 @@ void whpx_vcpu_kick(CPUState *cpu)
   * Memory support.
   */
  
@@ -99,16 +99,15 @@ index 2ab6830911..d3d30d0d57 100644
 +    /* The guest has surrendered these free pages until the report is
 +     * returned, and the caller reclaims only for a guest that did not
 +     * negotiate PAGE_POISON, so it expects nothing of their contents. Give
-+     * their physical pages back to Windows
-+     * in place. The range stays committed and stays mapped at its GPA, so
-+     * the reclaim never needs commit charge back and cannot leave the guest
-+     * with an invalid mapping. A later access sees either the old contents
-+     * or zeroes, both valid for a free page.
++     * their physical pages back to Windows in place. The range stays
++     * committed and stays mapped at its GPA, so the reclaim never needs
++     * commit charge back and cannot leave the guest with an invalid mapping.
++     * Windows leaves discarded contents unspecified, which a free page allows.
 +     *
 +     * whpx_set_phys_mem() pins large RAM mappings, and Windows cannot give a
-+     * pinned page back, so unpin the reported range first. The mapping stays
-+     * valid and the range becomes ordinary pageable guest RAM. Without
-+     * WHvAdviseGpaRange nothing was pinned.
++     * pinned page back, so unpin the reported range first. Unpinning is best
++     * effort: the discard still runs and frees whatever is not pinned. The
++     * mapping stays valid. Without WHvAdviseGpaRange nothing was pinned.
 +     *
 +     * A failure here only means the pages stay resident: log it, sparingly,
 +     * and let the report be returned as usual. The guest waits for every

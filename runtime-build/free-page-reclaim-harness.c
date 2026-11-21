@@ -7,9 +7,14 @@
  * only, so the host never comes under memory pressure.
  *
  * The reclaim must return, unpin exactly the reported range before discarding
- * it, keep the range committed and mapped, release its physical pages, leave
- * each page with either its old contents or zeroes, and survive a failed unpin
- * or discard by logging it.
+ * it, never unmap or remap the range, keep it committed, release its physical
+ * pages, and survive a failed unpin or discard by logging it. Windows documents
+ * discarded contents as unspecified; the harness also checks that this build
+ * leaves each page with its old contents or zeroes, so a Windows change shows.
+ *
+ * The WHP calls are stubs, so this covers Windows commit charge, working-set
+ * residency and call order. Guest and host coherence through a real partition
+ * needs WHPX, which hosted runners lack; the PR's scratch probes cover it.
  */
 #include <windows.h>
 #include <psapi.h>
@@ -253,8 +258,8 @@ int main(void)
           "the reported range was not unpinned exactly (%d unpins, %llx+%llx)", unpins,
           (unsigned long long)unpin_gpa, (unsigned long long)unpin_size);
     CHECK(unpinned_before_discard == 1, "the range was discarded before it was unpinned");
-    CHECK(unmapped == mapped, "GPA range left unmapped (%d unmaps, %d maps)",
-          unmapped, mapped);
+    CHECK(!unmapped && !mapped, "the reclaim unmapped or remapped the GPA range "
+          "(%d unmaps, %d maps)", unmapped, mapped);
     CHECK(committed(chunk, CHUNK), "reclaimed range is no longer committed");
     CHECK(private_usage() == charged, "commit charge changed: %zu -> %zu",
           charged, private_usage());

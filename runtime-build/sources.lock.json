@@ -68,7 +68,7 @@
       },
       {
         "file": "patches/qemu/0015-reclaim-free-guest-pages-on-whpx.patch",
-        "sha256": "f4312c9ec288767755470cb3dd0aee3a440726160708267a82be3f576c0b375c"
+        "sha256": "30e6469cf7565869675cec356d1988a1c385804a18bfbb0d2e565b27f2f0bc68"
       },
       {
         "file": "patches/qemu/0016-live-sdl-audio-routes.patch",
