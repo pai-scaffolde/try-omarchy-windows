@@ -273,12 +273,24 @@ const diskIOThreads = 4
 // no flush or caching behavior, and it works with the disk I/O threads.
 const qcow2L2CacheSize = "128M"
 
+// diskErrorAction is what QEMU does when a host read or write of the disk
+// fails. QEMU's defaults are werror=enospc, which pauses only on a full host
+// disk, and rerror=report. Any other failure, such as EIO or a host write
+// refused for lack of memory, reaches the guest as a disk error: Linux drops
+// the write and ext4 remounts its root read-only until a fsck. With "stop",
+// QEMU pauses the VM instead (QMP status "io-error", event BLOCK_IO_ERROR) and
+// keeps the failed request. A QMP "cont" after the host recovers retries it,
+// and the guest never sees the error. Something must send that "cont": a
+// paused VM stays paused.
+const diskErrorAction = "stop"
+
 // driveArgs attaches the disk as a multi-queue virtio-blk device whose queues
 // are spread round-robin over dedicated I/O threads. Guest discards (fstrim)
 // and zero writes pass through to the qcow2 driver, which is what lets it
-// reuse the freed space.
+// reuse the freed space. A failed host read or write pauses the VM
+// (diskErrorAction).
 func driveArgs(cfg *config) []string {
-	drive := "file=" + qemuOptionValue(cfg.disk) + ",format=" + cfg.diskFormat + ",if=none,id=disk0"
+	drive := "file=" + qemuOptionValue(cfg.disk) + ",format=" + cfg.diskFormat + ",if=none,id=disk0,werror=" + diskErrorAction + ",rerror=" + diskErrorAction
 	if cfg.diskFormat == "qcow2" {
 		drive += ",discard=unmap,detect-zeroes=unmap,l2-cache-size=" + qcow2L2CacheSize
 	}

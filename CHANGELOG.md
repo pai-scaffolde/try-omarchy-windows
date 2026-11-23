@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A failed disk read or write on Windows now pauses Omarchy instead of
+  passing the error to the guest, where Linux would drop the write and remount
+  its disk read-only. Before, only a full Windows drive paused it. A QMP
+  `cont` after Windows recovers retries the request, and the guest never sees
+  the error. Nothing sends that `cont` automatically yet: a paused Omarchy
+  stays paused until something resumes it.
 - Omarchy no longer stops when Windows runs short of commit while Omarchy
   gives freed memory back. The memory is returned without giving up its commit
   charge, so there is nothing to win back; a return that still fails is logged
